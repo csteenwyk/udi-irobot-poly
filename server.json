@@ -1,0 +1,34 @@
+{
+    "name": "iRobot",
+    "docs": "https://github.com/csteenwyk/udi-irobot-poly",
+    "type": "python3",
+    "executable": "irobot-poly.py",
+    "install": "install.sh",
+    "description": "iRobot Roomba / Braava local control for ISY. Multiple robots, on-device pairing (no cloud), start/stop/dock/pause, battery, bin, phase, and error reporting.",
+    "shortPoll": "30",
+    "longPoll": "300",
+    "logLevel": "INFO",
+    "customParams": {
+        "robot1_ip": ""
+    },
+    "customParamsDoc": "### iRobot NodeServer\n\nEach robot is configured with keys prefixed `robotN_` where N is any integer.\n\n**Required per robot**\n- `robotN_ip` — the robot's local IP (set a static reservation in your router)\n\n**Auto-filled by pairing** (click **Fetch Credentials** on the controller after setting the IP)\n- `robotN_blid` — the robot's unique ID\n- `robotN_password` — local MQTT token (`:1:...`)\n- `robotN_name` — robot's name as set in the iRobot app\n\n**Pairing flow**\n1. Set `robot1_ip` to the robot's IP.\n2. Click **Fetch Credentials** on the controller node.\n3. On the robot: hold **Home** for ~2 seconds until it beeps and the Wi-Fi LED pulses.\n4. Wait — the other three params will be filled in automatically.\n\nAdd `robot2_ip`, `robot3_ip`, etc. for additional robots.",
+    "credits": [
+        {
+            "title": "iRobot NodeServer",
+            "author": "csteenwyk",
+            "version": "0.1.0",
+            "date": "April 2026",
+            "source": "https://github.com/csteenwyk/udi-irobot-poly",
+            "license": "https://github.com/csteenwyk/udi-irobot-poly/blob/main/LICENSE"
+        }
+    ],
+    "store": {
+        "developer": "5737892+csteenwyk@users.noreply.github.com",
+        "purchaseOptions": [
+            {
+                "isPerpetual": true,
+                "price": 0
+            }
+        ]
+    }
+}

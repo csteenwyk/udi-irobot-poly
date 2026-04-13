@@ -1,0 +1,50 @@
+# Node Server Names
+ND-irobot_controller-NAME = iRobot Controller
+ND-irobot_robot-NAME = iRobot
+
+# Controller Drivers
+ST-irobot_controller-ST-NAME = Status
+
+# Controller Commands
+CMD-irobot_controller-DISCOVER-NAME = Re-Scan Params
+CMD-irobot_controller-FETCH_CREDS-NAME = Fetch Credentials (Press Home on Robot)
+CMD-irobot_controller-QUERY-NAME = Query All
+
+# Robot Drivers
+ST-irobot_robot-ST-NAME = Phase
+ST-irobot_robot-BATLVL-NAME = Battery
+ST-irobot_robot-GV1-NAME = Bin Full
+ST-irobot_robot-GV2-NAME = Bin Present
+ST-irobot_robot-GV3-NAME = Docked
+ST-irobot_robot-GV4-NAME = Charging
+ST-irobot_robot-GV5-NAME = Error Code
+ST-irobot_robot-GV6-NAME = Signal
+
+# Robot Commands
+CMD-irobot_robot-START-NAME = Start Cleaning
+CMD-irobot_robot-STOP-NAME = Stop
+CMD-irobot_robot-PAUSE-NAME = Pause
+CMD-irobot_robot-RESUME-NAME = Resume
+CMD-irobot_robot-DOCK-NAME = Return to Dock
+CMD-irobot_robot-LOCATE-NAME = Locate
+CMD-irobot_robot-QUERY-NAME = Query
+
+# Phase values (Roomba "phase" / "cycle" field)
+CUST_PHASE-0 = Unknown
+CUST_PHASE-1 = Charging
+CUST_PHASE-2 = Run
+CUST_PHASE-3 = Stop
+CUST_PHASE-4 = Stuck
+CUST_PHASE-5 = Dock Seek
+CUST_PHASE-6 = Dock End
+CUST_PHASE-7 = Evac
+CUST_PHASE-8 = Pause
+CUST_PHASE-9 = Charge Complete
+
+# Charging state values
+CUST_CHARGE-0 = Not Charging
+CUST_CHARGE-1 = Reconditioning
+CUST_CHARGE-2 = Full
+CUST_CHARGE-3 = Trickle
+CUST_CHARGE-4 = Waiting
+CUST_CHARGE-5 = Fault
