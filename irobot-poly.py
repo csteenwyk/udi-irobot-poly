@@ -326,25 +326,31 @@ class Controller(udi_interface.Node):
                     'Verify IP, power, and that you pressed Home on the robot.')
 
     def _fetch_one(self, ip, timeout=45):
-        """Retry roombapy password getter until the robot is in pairing mode."""
+        """Look up blid/name via discovery (no user action), then retry
+        password getter until the user has put the robot into pairing mode
+        (Home held ~2s, Wi-Fi LED pulsing)."""
+        blid = name = None
+        try:
+            info = RoombaDiscovery().get(ip)
+            if info:
+                blid = getattr(info, 'blid', None)
+                name = getattr(info, 'robot_name', None)
+        except Exception as e:
+            LOGGER.warning(f'Discovery for {ip}: {e}')
+
         deadline = time.time() + timeout
         last_err = None
         while time.time() < deadline:
             try:
-                getter = RoombaPassword(ip)
-                result = getter.get_password()
-                if result:
-                    blid = getattr(result, 'blid', None) or result.get('blid')
-                    password = getattr(result, 'password', None) or result.get('password')
-                    name = getattr(result, 'robotName', None) or result.get('robotName')
-                    if blid and password:
-                        return blid, password, name
+                password = RoombaPassword(ip).get_password()
+                if password:
+                    return blid, password, name
             except Exception as e:
                 last_err = e
             time.sleep(3)
         if last_err:
             LOGGER.warning(f'Password fetch for {ip}: {last_err}')
-        return None, None, None
+        return blid, None, name
 
     # --- Commands / poll ---
 
