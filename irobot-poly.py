@@ -250,7 +250,12 @@ class RobotNode(udi_interface.Node):
                 self._set('ST', _PHASE_MAP.get(phase, 0))
             if rssi:
                 pct = max(0, min(100, int(2 * (rssi + 100))))  # -100..-30 → 0..100
-                self._set('GV6', pct)
+                # Throttle: RSSI jitters a few percent every second; only
+                # publish when the signal moves by ≥10 points (or we've never
+                # reported it).
+                prev = self._cache.get('GV6')
+                if prev is None or abs(pct - prev) >= 10:
+                    self._set('GV6', pct)
 
             # --- bin ---
             if 'full' in bin_:
