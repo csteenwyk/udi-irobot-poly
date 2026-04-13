@@ -133,6 +133,7 @@ _ERROR_TEXT = {
     65: 'Hardware problem', 68: 'Hardware problem',
     73: 'Pad type changed', 74: 'Mop pad missing',
     101: 'Battery not detected', 105: 'Charging fault',
+    216: 'Clean Base bag full',  # S9+/i/j-series reported via MQTT error field
 }
 
 
@@ -264,7 +265,8 @@ class RobotNode(udi_interface.Node):
                 LOGGER.info(
                     f'{self.name}: reported keys = {sorted(reported.keys())}')
                 for key in ('dock', 'bin', 'cleanMissionStatus', 'signal',
-                            'bbchg3', 'bbrun', 'bbpause', 'bbswitch'):
+                            'bbchg3', 'bbrun', 'bbpause', 'bbswitch',
+                            'bbmssn', 'missionTelemetry', 'runtimeStats'):
                     if key in reported:
                         LOGGER.info(f'{self.name}: reported.{key} = {reported[key]}')
             mission  = reported.get('cleanMissionStatus', {}) or {}
@@ -343,9 +345,27 @@ class RobotNode(udi_interface.Node):
                 self._set('GV10', 1 if reported.get('binPause') else 0)
 
             # --- area & runtime this mission ---
-            # sqft → m² (1 sq ft = 0.0929 m²); runtime already in minutes
-            self._set('GV11', round(sqft * 0.0929, 1))
-            self._set('GV12', int(mssnM))
+            # Firmware doesn't always populate cleanMissionStatus.sqft on
+            # current S9+/j9+ releases — the field is often absent. Runtime
+            # comes from wall-clock diff against mssnStrtTm since mssnM only
+            # updates intermittently.
+            strt_tm = mission.get('mssnStrtTm') or 0
+            cycle_now = (mission.get('cycle') or 'none').lower()
+            if cycle_now != 'none' and strt_tm:
+                import time as _t
+                runtime_min = max(0, int((_t.time() - strt_tm) / 60))
+            else:
+                runtime_min = int(mssnM)  # last reported value (0 when idle)
+            self._set('GV12', runtime_min)
+            # Area: try several fields; if none populated, leave 0. Real data
+            # from a run will tell us where it lives on this firmware.
+            area_sqft = (
+                sqft
+                or (reported.get('bbmssn', {}) or {}).get('sqft')
+                or (reported.get('missionTelemetry', {}) or {}).get('sqft')
+                or 0
+            )
+            self._set('GV11', round(area_sqft * 0.0929, 1))
 
             # --- Clean Base bag full: multiple fields vary by firmware.
             #     Report if ANY of the candidates indicates full. Log the raw
@@ -360,8 +380,8 @@ class RobotNode(udi_interface.Node):
             bag_full = (
                 bool(dock.get('bagFull')) or
                 bool(bin_.get('bagFull')) or
-                err == 43 or
-                notReady in (43,)  # firmware-reported "bag full" notReady code
+                err in (43, 216) or            # 216 = S9+/i/j bag full
+                notReady in (43, 216)
             )
             self._set('GV13', 1 if bag_full else 0)
             LOGGER.debug(f'{self.name} bag signals: {bag_candidates}')
