@@ -154,6 +154,7 @@ class RobotNode(udi_interface.Node):
         self._ctrl = ctrl
         self._roomba = None
         self._cache = {}
+        self._dumped = False
         self._connect()
 
     def _connect(self):
@@ -199,6 +200,16 @@ class RobotNode(udi_interface.Node):
         try:
             state = self._roomba.master_state or {}
             reported = state.get('state', {}).get('reported', {})
+            # One-shot dump of every reported key to help map firmware-specific
+            # fields (charging state, bag full, etc.).
+            if not self._dumped and reported:
+                self._dumped = True
+                LOGGER.info(
+                    f'{self.name}: reported keys = {sorted(reported.keys())}')
+                for key in ('dock', 'bin', 'cleanMissionStatus', 'signal',
+                            'bbchg3', 'bbrun', 'bbpause', 'bbswitch'):
+                    if key in reported:
+                        LOGGER.info(f'{self.name}: reported.{key} = {reported[key]}')
             mission  = reported.get('cleanMissionStatus', {}) or {}
             bin_     = reported.get('bin', {}) or {}
             dock     = reported.get('dock', {}) or {}
