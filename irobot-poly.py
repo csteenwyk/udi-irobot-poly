@@ -400,6 +400,7 @@ class Controller(udi_interface.Node):
         self._controller_added = False
         self._last_params = {}
         self._reconcile_lock = threading.Lock()
+        self._pair_in_progress = False
 
         polyglot.subscribe(polyglot.CONFIGDONE,   self._on_config_done)
         polyglot.subscribe(polyglot.START,        self.start)
@@ -488,10 +489,22 @@ class Controller(udi_interface.Node):
         if not targets:
             self.poly.Notices['pair'] = 'No robots need pairing.'
             return
+        if self._pair_in_progress:
+            self.poly.Notices['pair'] = (
+                'Pairing already running — wait for the current attempt to '
+                'finish before clicking again.')
+            return
 
+        self._pair_in_progress = True
         thread = threading.Thread(
-            target=self._pair_loop, args=(targets,), daemon=True)
+            target=self._pair_wrapper, args=(targets,), daemon=True)
         thread.start()
+
+    def _pair_wrapper(self, targets):
+        try:
+            self._pair_loop(targets)
+        finally:
+            self._pair_in_progress = False
 
     def _pair_loop(self, targets):
         for idx, cfg in targets:
