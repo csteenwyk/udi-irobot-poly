@@ -115,15 +115,30 @@ class RobotNode(udi_interface.Node):
         if RoombaFactory is None:
             LOGGER.error('roombapy not installed')
             return
-        try:
-            self._roomba = RoombaFactory.create_roomba(
-                address=self._ip, blid=self._blid, password=self._password,
-                continuous=True, delay=10)
-            self._roomba.register_on_message_callback(self._on_message)
-            self._roomba.connect()
-            LOGGER.info(f'{self.name}: connected to {self._ip}')
-        except Exception as e:
-            LOGGER.error(f'{self.name}: connect failed: {e}')
+        # Run connect in a background thread with retries. The robot's MQTT
+        # listener can take several seconds to accept clients right after
+        # pairing, and it only allows one client at a time — so the first
+        # try often gets Connection refused.
+        threading.Thread(target=self._connect_loop, daemon=True,
+                         name=f'connect-{self.address}').start()
+
+    def _connect_loop(self):
+        time.sleep(3)  # initial delay after pairing
+        for attempt in range(1, 7):
+            try:
+                self._roomba = RoombaFactory.create_roomba(
+                    address=self._ip, blid=self._blid, password=self._password,
+                    continuous=True, delay=10)
+                self._roomba.register_on_message_callback(self._on_message)
+                self._roomba.connect()
+                LOGGER.info(f'{self.name}: connected to {self._ip}')
+                return
+            except Exception as e:
+                LOGGER.warning(
+                    f'{self.name}: connect attempt {attempt} failed: {e}')
+                self._roomba = None
+                time.sleep(5 * attempt)  # 5, 10, 15, 20, 25, 30 s
+        LOGGER.error(f'{self.name}: giving up after 6 attempts')
 
     def _on_message(self, json_data):
         self._apply_state()
@@ -224,6 +239,7 @@ class Controller(udi_interface.Node):
         self._node_added = threading.Event()
         self._controller_added = False
         self._last_params = {}
+        self._reconcile_lock = threading.Lock()
 
         polyglot.subscribe(polyglot.CONFIGDONE,   self._on_config_done)
         polyglot.subscribe(polyglot.START,        self.start)
@@ -264,28 +280,38 @@ class Controller(udi_interface.Node):
             self._reconcile_robots()
 
     def _reconcile_robots(self):
-        """Add nodes for any fully-configured robotN_* entries."""
-        configured = _parse_robots(self._last_params)
-        if not configured:
-            self.poly.Notices['config'] = (
-                'Add `robot1_ip` in Custom Parameters, then click Fetch Credentials.')
-            return
+        """Add nodes for any fully-configured robotN_* entries. Serialized
+        under a lock because rapid successive CUSTOMPARAMS events (e.g. during
+        pairing, when we write blid/password/name) trigger concurrent calls."""
+        with self._reconcile_lock:
+            configured = _parse_robots(self._last_params)
+            if not configured:
+                self.poly.Notices['config'] = (
+                    'Add `robot1_ip` in Custom Parameters, then click Fetch Credentials.')
+                return
 
-        for idx, cfg in configured.items():
-            if idx in self._robots:
-                continue
-            ip, blid, password = cfg.get('ip'), cfg.get('blid'), cfg.get('password')
-            if not (ip and blid and password):
-                self.poly.Notices[f'pair{idx}'] = (
-                    f'Robot {idx}: IP set but not paired — click Fetch Credentials.')
-                continue
-            name = cfg.get('name') or f'Roomba {idx}'
-            address = _address_for(idx, blid)
-            LOGGER.info(f'Adding robot node {address} ({name})')
-            node = RobotNode(self.poly, self.address, address, name,
-                             ip, blid, password, self)
-            self._add_node_wait(node)
-            self._robots[idx] = node
+            for idx, cfg in configured.items():
+                if idx in self._robots:
+                    continue
+                ip, blid, password = cfg.get('ip'), cfg.get('blid'), cfg.get('password')
+                if not (ip and blid and password):
+                    self.poly.Notices[f'pair{idx}'] = (
+                        f'Robot {idx}: IP set but not paired — click Fetch Credentials.')
+                    continue
+                name = cfg.get('name') or f'Roomba {idx}'
+                address = _address_for(idx, blid)
+                LOGGER.info(f'Adding robot node {address} ({name})')
+                # Reserve the slot before creating the node so a concurrent
+                # reconcile can't race us past the `idx in self._robots` check.
+                self._robots[idx] = None
+                try:
+                    node = RobotNode(self.poly, self.address, address, name,
+                                     ip, blid, password, self)
+                    self._add_node_wait(node)
+                    self._robots[idx] = node
+                except Exception as e:
+                    LOGGER.error(f'Failed to add robot {idx}: {e}')
+                    del self._robots[idx]
 
     # --- Pairing ---
 
