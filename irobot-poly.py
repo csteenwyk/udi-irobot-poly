@@ -309,8 +309,12 @@ class Controller(udi_interface.Node):
         for idx, cfg in targets:
             ip = cfg['ip']
             self.poly.Notices[f'pair{idx}'] = (
-                f'Robot {idx} ({ip}): hold HOME for ~2s until you hear a beep. '
-                'Retrieving credentials...')
+                f'Pairing Robot {idx} ({ip}) — DO THIS NOW: '
+                '(1) put robot on its dock, powered on. '
+                '(2) Press and HOLD the HOME button for about 2 seconds, '
+                'until the robot beeps and the Wi-Fi LED starts pulsing. '
+                '(3) Release and wait — this window closes automatically '
+                'on success or after 45 seconds.')
             blid, password, name = self._fetch_one(ip, timeout=45)
             if blid and password:
                 self._params[f'robot{idx}_blid'] = blid
