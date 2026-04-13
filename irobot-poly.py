@@ -169,25 +169,42 @@ class RobotNode(udi_interface.Node):
                          name=f'connect-{self.address}').start()
 
     def _connect_loop(self):
+        """Retry forever with capped backoff. Robots with cloud blocked
+        cycle Wi-Fi and only briefly accept connections — we need to keep
+        trying indefinitely to catch an open window."""
         time.sleep(3)  # initial delay after pairing
-        for attempt in range(1, 7):
+        attempt = 0
+        while True:
+            attempt += 1
             try:
                 self._roomba = RoombaFactory.create_roomba(
                     address=self._ip, blid=self._blid, password=self._password,
                     continuous=True, delay=10)
                 self._roomba.register_on_message_callback(self._on_message)
+                self._roomba.register_on_disconnect_callback(self._on_disconnect)
                 self._roomba.connect()
-                LOGGER.info(f'{self.name}: connected to {self._ip}')
+                LOGGER.info(f'{self.name}: connected to {self._ip} '
+                            f'(attempt {attempt})')
                 return
             except Exception as e:
                 LOGGER.warning(
                     f'{self.name}: connect attempt {attempt} failed: {e}')
                 self._roomba = None
-                time.sleep(5 * attempt)  # 5, 10, 15, 20, 25, 30 s
-        LOGGER.error(f'{self.name}: giving up after 6 attempts')
+                # Backoff: 5, 10, 15, ... capped at 60 s.
+                time.sleep(min(60, 5 * attempt))
 
     def _on_message(self, json_data):
         self._apply_state()
+
+    def _on_disconnect(self, error=None):
+        """Re-launch the connect loop after an unexpected disconnect so we
+        pick the robot back up when its Wi-Fi/port becomes reachable again."""
+        LOGGER.warning(
+            f'{self.name}: disconnected ({error}); restarting connect loop')
+        self._roomba = None
+        self._dumped = False  # re-dump on next successful connect
+        threading.Thread(target=self._connect_loop, daemon=True,
+                         name=f'connect-{self.address}').start()
 
     def _set(self, driver, value):
         if self._cache.get(driver) != value:
