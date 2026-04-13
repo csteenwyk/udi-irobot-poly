@@ -17,11 +17,11 @@ import time
 import udi_interface
 from udi_interface import Custom
 
+_IMPORT_ERR = None
 try:
-    from roombapy import RoombaFactory
-    from roombapy.getpassword import RoombaPassword
-    from roombapy.discovery import RoombaDiscovery
-except ImportError:
+    from roombapy import RoombaFactory, RoombaPassword, RoombaDiscovery
+except ImportError as _e:
+    _IMPORT_ERR = str(_e)
     RoombaFactory = RoombaPassword = RoombaDiscovery = None
 
 LOGGER = udi_interface.LOGGER
@@ -292,7 +292,9 @@ class Controller(udi_interface.Node):
     def cmd_fetch_creds(self, command=None):
         """Fetch blid/password/name for every robotN with ip set but creds missing."""
         if RoombaPassword is None:
-            self.poly.Notices['pair'] = 'roombapy not installed — reinstall the nodeserver.'
+            self.poly.Notices['pair'] = (
+                f'roombapy import failed ({_IMPORT_ERR}) — check install.log and reinstall.')
+            LOGGER.error(f'roombapy import failed: {_IMPORT_ERR}')
             return
         configured = _parse_robots(self._last_params)
         targets = [(i, c) for i, c in configured.items()
