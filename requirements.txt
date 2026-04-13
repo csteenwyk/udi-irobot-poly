@@ -1,2 +1,2 @@
-roombapy==1.6.10
+roombapy==1.6.7
 udi_interface
