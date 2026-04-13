@@ -499,10 +499,12 @@ class Controller(udi_interface.Node):
             self.poly.Notices[f'pair{idx}'] = (
                 f'Pairing Robot {idx} ({ip}) — DO THIS NOW: '
                 '(1) put robot on its dock, powered on. '
-                '(2) Press and HOLD the HOME button for about 2 seconds, '
+                '(2) Press and HOLD the HOME button (or Clean button on '
+                'single-button j/i-series robots) for about 2 seconds, '
                 'until the robot beeps and the Wi-Fi LED starts pulsing. '
-                '(3) Release and wait — this window closes automatically '
-                'on success or after 45 seconds.')
+                'Do NOT hold longer — longer holds trigger bag-empty or '
+                'power-off. (3) Release and wait — this window closes '
+                'automatically on success or after 45 seconds.')
             blid, password, name = self._fetch_one(ip, timeout=45)
             if blid and password:
                 self._params[f'robot{idx}_blid'] = blid
