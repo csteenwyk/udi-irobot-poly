@@ -18,24 +18,44 @@
   <!-- Robot Node -->
   <nodeDef id="irobot_robot" nodeType="139" nls="irobot_robot">
     <sts>
-      <st id="ST"    editor="E_PHASE"/>   <!-- Phase -->
-      <st id="BATLVL" editor="E_PERCENT"/> <!-- Battery % -->
-      <st id="GV1"   editor="E_STATUS"/>  <!-- Bin full -->
-      <st id="GV2"   editor="E_STATUS"/>  <!-- Bin present -->
-      <st id="GV3"   editor="E_STATUS"/>  <!-- Docked -->
-      <st id="GV4"   editor="E_CHARGE"/>  <!-- Charging state -->
-      <st id="GV5"   editor="E_TIME"/>    <!-- Error code -->
-      <st id="GV6"   editor="E_PERCENT"/> <!-- RSSI / signal -->
+      <st id="ST"    editor="E_PHASE"/>
+      <st id="BATLVL" editor="E_PERCENT"/>
+      <st id="GV1"   editor="E_STATUS"/>
+      <st id="GV2"   editor="E_STATUS"/>
+      <st id="GV3"   editor="E_STATUS"/>
+      <st id="GV4"   editor="E_CHARGE"/>
+      <st id="GV5"   editor="E_TIME"/>
+      <st id="GV6"   editor="E_PERCENT"/>
+      <st id="GV7"   editor="E_SUCTION"/>
+      <st id="GV8"   editor="E_PASSES"/>
+      <st id="GV9"   editor="E_STATUS"/>
+      <st id="GV10"  editor="E_STATUS"/>
+      <st id="GV11"  editor="E_AREA"/>
+      <st id="GV12"  editor="E_TIME"/>
+      <st id="GV13"  editor="E_STATUS"/>
     </sts>
     <cmds>
       <sends/>
       <accepts>
+        <cmd id="SET_SUCTION">
+          <p id="" editor="E_SUCTION" init="GV7"/>
+        </cmd>
+        <cmd id="SET_PASSES">
+          <p id="" editor="E_PASSES" init="GV8"/>
+        </cmd>
+        <cmd id="SET_CHILD_LOCK">
+          <p id="" editor="E_STATUS" init="GV9"/>
+        </cmd>
+        <cmd id="SET_BIN_PAUSE">
+          <p id="" editor="E_STATUS" init="GV10"/>
+        </cmd>
         <cmd id="START"/>
         <cmd id="STOP"/>
         <cmd id="PAUSE"/>
         <cmd id="RESUME"/>
         <cmd id="DOCK"/>
         <cmd id="LOCATE"/>
+        <cmd id="EVAC"/>
         <cmd id="QUERY"/>
       </accepts>
     </cmds>

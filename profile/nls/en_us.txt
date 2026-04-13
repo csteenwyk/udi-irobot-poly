@@ -16,9 +16,16 @@ ST-irobot_robot-BATLVL-NAME = Battery
 ST-irobot_robot-GV1-NAME = Bin Full
 ST-irobot_robot-GV2-NAME = Bin Present
 ST-irobot_robot-GV3-NAME = Docked
-ST-irobot_robot-GV4-NAME = Charging
+ST-irobot_robot-GV4-NAME = Charging State
 ST-irobot_robot-GV5-NAME = Error Code
 ST-irobot_robot-GV6-NAME = Signal
+ST-irobot_robot-GV7-NAME = Suction
+ST-irobot_robot-GV8-NAME = Passes
+ST-irobot_robot-GV9-NAME = Child Lock
+ST-irobot_robot-GV10-NAME = Bin Full Pause
+ST-irobot_robot-GV11-NAME = Area Cleaned (m\u00b2)
+ST-irobot_robot-GV12-NAME = Runtime (min)
+ST-irobot_robot-GV13-NAME = Clean Base Bag Full
 
 # Robot Commands
 CMD-irobot_robot-START-NAME = Start Cleaning
@@ -27,9 +34,14 @@ CMD-irobot_robot-PAUSE-NAME = Pause
 CMD-irobot_robot-RESUME-NAME = Resume
 CMD-irobot_robot-DOCK-NAME = Return to Dock
 CMD-irobot_robot-LOCATE-NAME = Locate
+CMD-irobot_robot-EVAC-NAME = Empty Bin (Clean Base)
+CMD-irobot_robot-SET_SUCTION-NAME = Set Suction
+CMD-irobot_robot-SET_PASSES-NAME = Set Passes
+CMD-irobot_robot-SET_CHILD_LOCK-NAME = Child Lock
+CMD-irobot_robot-SET_BIN_PAUSE-NAME = Bin Full Pause
 CMD-irobot_robot-QUERY-NAME = Query
 
-# Phase values (Roomba "phase" / "cycle" field)
+# Phase values
 CUST_PHASE-0 = Unknown
 CUST_PHASE-1 = Charging
 CUST_PHASE-2 = Run
@@ -43,8 +55,18 @@ CUST_PHASE-9 = Charge Complete
 
 # Charging state values
 CUST_CHARGE-0 = Not Charging
-CUST_CHARGE-1 = Reconditioning
+CUST_CHARGE-1 = Charging
 CUST_CHARGE-2 = Full
 CUST_CHARGE-3 = Trickle
 CUST_CHARGE-4 = Waiting
 CUST_CHARGE-5 = Fault
+
+# Suction values
+CUST_SUCTION-0 = Auto
+CUST_SUCTION-1 = Performance
+CUST_SUCTION-2 = Eco
+
+# Passes values
+CUST_PASSES-0 = Auto
+CUST_PASSES-1 = One
+CUST_PASSES-2 = Two

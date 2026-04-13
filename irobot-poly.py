@@ -47,7 +47,7 @@ _PHASE_MAP = {
     'cancelled':   3,
 }
 
-# chargingState reported ints (roombapy master_state)
+# chargingState reported strings → editor index
 _CHARGE_MAP = {
     'none':            0,
     'charging':        1,
@@ -56,6 +56,44 @@ _CHARGE_MAP = {
     'trickle':         3,
     'waiting':         4,
     'fault':           5,
+}
+
+# Suction modes, passes — index ↔ (carpetBoost, vacHigh) / (noAutoPasses, twoPass)
+_SUCTION_TO_PREFS = {
+    0: {'carpetBoost': True,  'vacHigh': False},   # Auto
+    1: {'carpetBoost': False, 'vacHigh': True},    # Performance
+    2: {'carpetBoost': False, 'vacHigh': False},   # Eco
+}
+_PASSES_TO_PREFS = {
+    0: {'noAutoPasses': False, 'twoPass': False},  # Auto
+    1: {'noAutoPasses': True,  'twoPass': False},  # 1 pass
+    2: {'noAutoPasses': True,  'twoPass': True},   # 2 passes
+}
+
+def _suction_index(reported):
+    cb = bool(reported.get('carpetBoost'))
+    vh = bool(reported.get('vacHigh'))
+    if cb and not vh: return 0
+    if vh and not cb: return 1
+    return 2  # both False → Eco; both True is invalid, treat as Eco
+
+def _passes_index(reported):
+    if not reported.get('noAutoPasses'):
+        return 0
+    return 2 if reported.get('twoPass') else 1
+
+# Common error codes → human-readable string (for log and notice).
+_ERROR_TEXT = {
+    0: 'OK', 1: 'Left wheel off floor', 2: 'Right wheel off floor',
+    5: 'Left wheel stuck', 6: 'Brush stuck', 9: 'Bumper stuck',
+    10: 'Right wheel stuck', 14: 'Bin missing', 15: 'Reboot required',
+    16: 'Bumped — picked up?', 17: 'Navigation problem', 18: 'Docking problem',
+    20: 'Low battery', 31: 'Clean left wheel', 32: 'Clean right wheel',
+    38: 'Vacuum motor problem', 43: 'Clean Base bag full',
+    46: 'Battery disconnect', 52: 'Mission cannot continue',
+    65: 'Hardware problem', 68: 'Hardware problem',
+    73: 'Pad type changed', 74: 'Mop pad missing',
+    101: 'Battery not detected', 105: 'Charging fault',
 }
 
 
@@ -91,14 +129,21 @@ class RobotNode(udi_interface.Node):
     id = 'irobot_robot'
 
     drivers = [
-        {'driver': 'ST',    'value': 0, 'uom': 25},
-        {'driver': 'BATLVL','value': 0, 'uom': 51},
-        {'driver': 'GV1',   'value': 0, 'uom': 2},
-        {'driver': 'GV2',   'value': 0, 'uom': 2},
-        {'driver': 'GV3',   'value': 0, 'uom': 2},
-        {'driver': 'GV4',   'value': 0, 'uom': 25},
-        {'driver': 'GV5',   'value': 0, 'uom': 56},
-        {'driver': 'GV6',   'value': 0, 'uom': 51},
+        {'driver': 'ST',    'value': 0, 'uom': 25},  # Phase
+        {'driver': 'BATLVL','value': 0, 'uom': 51},  # Battery %
+        {'driver': 'GV1',   'value': 0, 'uom': 2},   # Bin full
+        {'driver': 'GV2',   'value': 0, 'uom': 2},   # Bin present
+        {'driver': 'GV3',   'value': 0, 'uom': 2},   # Docked
+        {'driver': 'GV4',   'value': 0, 'uom': 25},  # Charging state
+        {'driver': 'GV5',   'value': 0, 'uom': 56},  # Error code
+        {'driver': 'GV6',   'value': 0, 'uom': 51},  # Signal %
+        {'driver': 'GV7',   'value': 0, 'uom': 25},  # Suction mode
+        {'driver': 'GV8',   'value': 0, 'uom': 25},  # Passes mode
+        {'driver': 'GV9',   'value': 0, 'uom': 2},   # Child lock
+        {'driver': 'GV10',  'value': 0, 'uom': 2},   # Bin-Full pause
+        {'driver': 'GV11',  'value': 0, 'uom': 56},  # Area this run (m²)
+        {'driver': 'GV12',  'value': 0, 'uom': 56},  # Runtime this run (min)
+        {'driver': 'GV13',  'value': 0, 'uom': 2},   # Clean Base bag full
     ]
 
     def __init__(self, polyglot, primary, address, name, ip, blid, password, ctrl):
@@ -154,32 +199,99 @@ class RobotNode(udi_interface.Node):
         try:
             state = self._roomba.master_state or {}
             reported = state.get('state', {}).get('reported', {})
+            mission  = reported.get('cleanMissionStatus', {}) or {}
+            bin_     = reported.get('bin', {}) or {}
+            dock     = reported.get('dock', {}) or {}
 
-            batt   = reported.get('batPct')
-            phase  = reported.get('cleanMissionStatus', {}).get('phase')
-            bin_   = reported.get('bin', {})
-            docked = reported.get('cleanMissionStatus', {}).get('notReady', 1) == 39 \
-                     or phase in ('charge', 'dockend')
-            charge = reported.get('batteryType') and reported.get('cleanMissionStatus', {}).get('notReady')
-            charging = reported.get('cleanMissionStatus', {}).get('phase') == 'charge'
-            err    = reported.get('cleanMissionStatus', {}).get('error', 0)
-            rssi   = reported.get('signal', {}).get('rssi', 0)
+            phase   = mission.get('phase')
+            err     = mission.get('error', 0) or 0
+            sqft    = mission.get('sqft', 0) or 0
+            mssnM   = mission.get('mssnM', 0) or 0
+            notReady = mission.get('notReady', 0) or 0
+            batt    = reported.get('batPct')
+            rssi    = reported.get('signal', {}).get('rssi', 0)
+            chgState = (reported.get('bbchg3') or {}).get('avgMin')  # placeholder
+            chargingState = reported.get('chargingState') or reported.get('cleanMissionStatus', {}).get('chargingState')
+            if isinstance(chargingState, dict):
+                chargingState = chargingState.get('state')
 
+            # --- battery / phase / signal ---
             if batt is not None:
                 self._set('BATLVL', int(batt))
             if phase is not None:
                 self._set('ST', _PHASE_MAP.get(phase, 0))
+            if rssi:
+                pct = max(0, min(100, int(2 * (rssi + 100))))  # -100..-30 → 0..100
+                self._set('GV6', pct)
+
+            # --- bin ---
             if 'full' in bin_:
                 self._set('GV1', 1 if bin_.get('full') else 0)
             if 'present' in bin_:
                 self._set('GV2', 1 if bin_.get('present') else 0)
-            self._set('GV3', 1 if docked else 0)
-            self._set('GV4', 1 if charging else 0)
-            self._set('GV5', int(err or 0))
-            # Map rssi (-100..-30 dBm) → 0..100 %
-            if rssi:
-                pct = max(0, min(100, int(2 * (rssi + 100))))
-                self._set('GV6', pct)
+
+            # --- docked: prefer authoritative dock.known, fall back to phase ---
+            if 'known' in dock:
+                self._set('GV3', 1 if dock.get('known') else 0)
+            else:
+                self._set('GV3', 1 if phase in ('charge', 'dockend', 'dock') else 0)
+
+            # --- charging state (multi-enum). Prefer explicit chargingState
+            #     string; else derive from phase. ---
+            if isinstance(chargingState, str):
+                self._set('GV4', _CHARGE_MAP.get(chargingState.lower(), 0))
+            elif phase == 'charge':
+                self._set('GV4', 1)
+            elif batt is not None and batt >= 100 and phase in ('stop', 'dockend', 'charge'):
+                self._set('GV4', 2)  # Full
+            else:
+                self._set('GV4', 0)
+
+            # --- error (numeric + readable notice) ---
+            self._set('GV5', int(err))
+            notice_key = f'err_{self.address}'
+            if err:
+                text = _ERROR_TEXT.get(err, f'Error {err}')
+                self._ctrl.poly.Notices[notice_key] = f'{self.name}: {text} (code {err})'
+            else:
+                try:
+                    del self._ctrl.poly.Notices[notice_key]
+                except Exception:
+                    pass
+
+            # --- suction / passes ---
+            self._set('GV7', _suction_index(reported))
+            self._set('GV8', _passes_index(reported))
+
+            # --- child lock / bin pause ---
+            if 'childLock' in reported:
+                self._set('GV9', 1 if reported.get('childLock') else 0)
+            if 'binPause' in reported:
+                self._set('GV10', 1 if reported.get('binPause') else 0)
+
+            # --- area & runtime this mission ---
+            # sqft → m² (1 sq ft = 0.0929 m²); runtime already in minutes
+            self._set('GV11', round(sqft * 0.0929, 1))
+            self._set('GV12', int(mssnM))
+
+            # --- Clean Base bag full: multiple fields vary by firmware.
+            #     Report if ANY of the candidates indicates full. Log the raw
+            #     candidates at DEBUG so we can tighten this later. ---
+            bag_candidates = {
+                'dock.bagFull': dock.get('bagFull'),
+                'dock.state': dock.get('state'),
+                'bin.bagFull': bin_.get('bagFull'),
+                'notReady': notReady,
+                'error43': err == 43,
+            }
+            bag_full = (
+                bool(dock.get('bagFull')) or
+                bool(bin_.get('bagFull')) or
+                err == 43 or
+                notReady in (43,)  # firmware-reported "bag full" notReady code
+            )
+            self._set('GV13', 1 if bag_full else 0)
+            LOGGER.debug(f'{self.name} bag signals: {bag_candidates}')
         except Exception as e:
             LOGGER.debug(f'{self.name}: state parse error: {e}')
 
@@ -199,25 +311,60 @@ class RobotNode(udi_interface.Node):
         except Exception as e:
             LOGGER.error(f'{self.name}: send {cmd!r} failed: {e}')
 
+    def _set_prefs(self, prefs):
+        """Apply a dict of preferences to the robot via set_preference."""
+        if not self._roomba:
+            LOGGER.warning(f'{self.name}: not connected')
+            return
+        for k, v in prefs.items():
+            try:
+                self._roomba.set_preference(k, v)
+            except Exception as e:
+                LOGGER.error(f'{self.name}: set_preference({k}={v}) failed: {e}')
+
     def cmd_start(self, command):  self._send('start')
     def cmd_stop(self, command):   self._send('stop')
     def cmd_pause(self, command):  self._send('pause')
     def cmd_resume(self, command): self._send('resume')
     def cmd_dock(self, command):   self._send('dock')
     def cmd_locate(self, command): self._send('find')
+    def cmd_evac(self, command):   self._send('evac')
+
+    def cmd_set_suction(self, command):
+        idx = int(command.get('value', 0))
+        prefs = _SUCTION_TO_PREFS.get(idx)
+        if prefs:
+            self._set_prefs(prefs)
+
+    def cmd_set_passes(self, command):
+        idx = int(command.get('value', 0))
+        prefs = _PASSES_TO_PREFS.get(idx)
+        if prefs:
+            self._set_prefs(prefs)
+
+    def cmd_set_child_lock(self, command):
+        self._set_prefs({'childLock': bool(int(command.get('value', 0)))})
+
+    def cmd_set_bin_pause(self, command):
+        self._set_prefs({'binPause': bool(int(command.get('value', 0)))})
 
     def query(self, command=None):
         self._apply_state()
         self.reportDrivers()
 
     commands = {
-        'START':  cmd_start,
-        'STOP':   cmd_stop,
-        'PAUSE':  cmd_pause,
-        'RESUME': cmd_resume,
-        'DOCK':   cmd_dock,
-        'LOCATE': cmd_locate,
-        'QUERY':  query,
+        'START':          cmd_start,
+        'STOP':           cmd_stop,
+        'PAUSE':          cmd_pause,
+        'RESUME':         cmd_resume,
+        'DOCK':           cmd_dock,
+        'LOCATE':         cmd_locate,
+        'EVAC':           cmd_evac,
+        'SET_SUCTION':    cmd_set_suction,
+        'SET_PASSES':     cmd_set_passes,
+        'SET_CHILD_LOCK': cmd_set_child_lock,
+        'SET_BIN_PAUSE':  cmd_set_bin_pause,
+        'QUERY':          query,
     }
 
 

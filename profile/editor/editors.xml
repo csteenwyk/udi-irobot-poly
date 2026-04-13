@@ -5,11 +5,20 @@
   <editor id="E_CHARGE">
     <range uom="25" subset="0,1,2,3,4,5" nls="CUST_CHARGE"/>
   </editor>
+  <editor id="E_SUCTION">
+    <range uom="25" subset="0,1,2" nls="CUST_SUCTION"/>
+  </editor>
+  <editor id="E_PASSES">
+    <range uom="25" subset="0,1,2" nls="CUST_PASSES"/>
+  </editor>
   <editor id="E_PERCENT">
     <range uom="51" min="0" max="100" prec="0"/>
   </editor>
   <editor id="E_TIME">
     <range uom="56" min="0" max="9999" prec="0"/>
+  </editor>
+  <editor id="E_AREA">
+    <range uom="56" min="0" max="9999" prec="1"/>
   </editor>
   <editor id="E_STATUS">
     <range uom="2" subset="0,1"/>
