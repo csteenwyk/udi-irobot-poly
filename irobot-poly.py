@@ -329,6 +329,7 @@ class RobotNode(udi_interface.Node):
     def cmd_dock(self, command):   self._send('dock')
     def cmd_locate(self, command): self._send('find')
     def cmd_evac(self, command):   self._send('evac')
+    def cmd_reboot(self, command): self._send('reset')
 
     def cmd_set_suction(self, command):
         idx = int(command.get('value', 0))
@@ -360,6 +361,7 @@ class RobotNode(udi_interface.Node):
         'DOCK':           cmd_dock,
         'LOCATE':         cmd_locate,
         'EVAC':           cmd_evac,
+        'REBOOT':         cmd_reboot,
         'SET_SUCTION':    cmd_set_suction,
         'SET_PASSES':     cmd_set_passes,
         'SET_CHILD_LOCK': cmd_set_child_lock,

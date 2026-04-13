@@ -35,6 +35,7 @@ CMD-irobot_robot-RESUME-NAME = Resume
 CMD-irobot_robot-DOCK-NAME = Return to Dock
 CMD-irobot_robot-LOCATE-NAME = Locate
 CMD-irobot_robot-EVAC-NAME = Empty Bin (Clean Base)
+CMD-irobot_robot-REBOOT-NAME = Reboot Robot
 CMD-irobot_robot-SET_SUCTION-NAME = Set Suction
 CMD-irobot_robot-SET_PASSES-NAME = Set Passes
 CMD-irobot_robot-SET_CHILD_LOCK-NAME = Child Lock
