@@ -517,8 +517,8 @@ class Controller(udi_interface.Node):
                 'until the robot beeps and the Wi-Fi LED starts pulsing. '
                 'Do NOT hold longer — longer holds trigger bag-empty or '
                 'power-off. (3) Release and wait — this window closes '
-                'automatically on success or after 45 seconds.')
-            blid, password, name = self._fetch_one(ip, timeout=45)
+                'automatically on success or after 2 minutes.')
+            blid, password, name = self._fetch_one(ip, timeout=120)
             if blid and password:
                 self._params[f'robot{idx}_blid'] = blid
                 self._params[f'robot{idx}_password'] = password
@@ -532,7 +532,7 @@ class Controller(udi_interface.Node):
                     f'Robot {idx} ({ip}): pairing failed. '
                     'Verify IP, power, and that you pressed Home on the robot.')
 
-    def _fetch_one(self, ip, timeout=45):
+    def _fetch_one(self, ip, timeout=120):
         """Look up blid/name via discovery (no user action), then retry
         password getter until the user has put the robot into pairing mode
         (Home held ~2s, Wi-Fi LED pulsing)."""
@@ -554,7 +554,7 @@ class Controller(udi_interface.Node):
                     return blid, password, name
             except Exception as e:
                 last_err = e
-            time.sleep(3)
+            time.sleep(1)
         if last_err:
             LOGGER.warning(f'Password fetch for {ip}: {last_err}')
         return blid, None, name
