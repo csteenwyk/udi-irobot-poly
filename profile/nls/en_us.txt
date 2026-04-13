@@ -26,6 +26,7 @@ ST-irobot_robot-GV10-NAME = Bin Full Pause
 ST-irobot_robot-GV11-NAME = Area Cleaned (m\u00b2)
 ST-irobot_robot-GV12-NAME = Runtime (min)
 ST-irobot_robot-GV13-NAME = Clean Base Bag Full
+ST-irobot_robot-GV14-NAME = Mission State
 
 # Robot Commands
 CMD-irobot_robot-START-NAME = Start Cleaning
@@ -71,3 +72,14 @@ CUST_SUCTION-2 = Eco
 CUST_PASSES-0 = Auto
 CUST_PASSES-1 = One
 CUST_PASSES-2 = Two
+
+# Mission state values
+CUST_MISSION-0 = Idle
+CUST_MISSION-1 = Cleaning
+CUST_MISSION-2 = Spot Cleaning
+CUST_MISSION-3 = Mapping
+CUST_MISSION-4 = Mid-Mission Charging
+CUST_MISSION-5 = Paused
+CUST_MISSION-6 = Returning to Dock
+CUST_MISSION-7 = Stuck
+CUST_MISSION-8 = Evacuating

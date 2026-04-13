@@ -33,6 +33,7 @@
       <st id="GV11"  editor="E_AREA"/>
       <st id="GV12"  editor="E_TIME"/>
       <st id="GV13"  editor="E_STATUS"/>
+      <st id="GV14"  editor="E_MISSION"/>
     </sts>
     <cmds>
       <sends/>

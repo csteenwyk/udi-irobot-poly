@@ -70,6 +70,45 @@ _PASSES_TO_PREFS = {
     2: {'noAutoPasses': True,  'twoPass': True},   # 2 passes
 }
 
+def _mission_state(mission):
+    """Combine cleanMissionStatus.cycle + .phase into one ISY index.
+
+    Returns:
+      0 Idle               — no mission active, just sitting
+      1 Cleaning           — whole-floor mission running
+      2 Spot Cleaning      — spot cycle running
+      3 Mapping            — training / learning run
+      4 Mid-Mission Charge — paused on dock, will resume
+      5 Paused             — user paused, not on dock
+      6 Returning to Dock
+      7 Stuck / Error
+      8 Evacuating         — dumping into Clean Base
+    """
+    cycle = (mission.get('cycle') or 'none').lower()
+    phase = (mission.get('phase') or '').lower()
+
+    if phase == 'stuck':
+        return 7
+    if phase == 'evac' or cycle == 'evac':
+        return 8
+    if cycle == 'none':
+        return 0
+    if cycle == 'train':
+        return 3
+    if cycle == 'spot':
+        return 2
+    # cycle == 'clean' (whole-floor) from here down
+    if phase in ('hmmidmsn', 'hmpostmsn', 'hmusrdock', 'dock', 'dockend'):
+        return 6
+    if phase == 'charge':
+        return 4
+    if phase == 'pause' or phase == 'stop':
+        return 5
+    if phase in ('run', 'resume', 'new'):
+        return 1
+    return 1  # cycle is active but phase unknown — assume cleaning
+
+
 def _suction_index(reported):
     cb = bool(reported.get('carpetBoost'))
     vh = bool(reported.get('vacHigh'))
@@ -144,6 +183,7 @@ class RobotNode(udi_interface.Node):
         {'driver': 'GV11',  'value': 0, 'uom': 56},  # Area this run (m²)
         {'driver': 'GV12',  'value': 0, 'uom': 56},  # Runtime this run (min)
         {'driver': 'GV13',  'value': 0, 'uom': 2},   # Clean Base bag full
+        {'driver': 'GV14',  'value': 0, 'uom': 25},  # Mission state
     ]
 
     def __init__(self, polyglot, primary, address, name, ip, blid, password, ctrl):
@@ -325,6 +365,9 @@ class RobotNode(udi_interface.Node):
             )
             self._set('GV13', 1 if bag_full else 0)
             LOGGER.debug(f'{self.name} bag signals: {bag_candidates}')
+
+            # --- mission state (derived from cycle + phase) ---
+            self._set('GV14', _mission_state(mission))
         except Exception as e:
             LOGGER.debug(f'{self.name}: state parse error: {e}')
 
