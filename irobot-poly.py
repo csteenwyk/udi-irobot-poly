@@ -196,6 +196,7 @@ class RobotNode(udi_interface.Node):
         self._roomba = None
         self._cache = {}
         self._dumped = False
+        self._mission_start_sqft = None  # bbrun.sqft at start of current mission
         self._connect()
 
     def _connect(self):
@@ -344,28 +345,29 @@ class RobotNode(udi_interface.Node):
             if 'binPause' in reported:
                 self._set('GV10', 1 if reported.get('binPause') else 0)
 
-            # --- area & runtime this mission ---
-            # Firmware doesn't always populate cleanMissionStatus.sqft on
-            # current S9+/j9+ releases — the field is often absent. Runtime
-            # comes from wall-clock diff against mssnStrtTm since mssnM only
-            # updates intermittently.
+            # --- runtime this mission (wall-clock; mssnM updates intermittently) ---
             strt_tm = mission.get('mssnStrtTm') or 0
             cycle_now = (mission.get('cycle') or 'none').lower()
             if cycle_now != 'none' and strt_tm:
-                import time as _t
-                runtime_min = max(0, int((_t.time() - strt_tm) / 60))
+                runtime_min = max(0, int((time.time() - strt_tm) / 60))
             else:
-                runtime_min = int(mssnM)  # last reported value (0 when idle)
+                runtime_min = int(mssnM)
             self._set('GV12', runtime_min)
-            # Area: try several fields; if none populated, leave 0. Real data
-            # from a run will tell us where it lives on this firmware.
-            area_sqft = (
-                sqft
-                or (reported.get('bbmssn', {}) or {}).get('sqft')
-                or (reported.get('missionTelemetry', {}) or {}).get('sqft')
-                or 0
-            )
-            self._set('GV11', round(area_sqft * 0.0929, 1))
+
+            # --- area this mission (delta against bbrun.sqft lifetime counter) ---
+            # cleanMissionStatus.sqft is absent on current S9+/j9+ firmware,
+            # but bbrun.sqft (lifetime ft² cleaned) still ticks up during a run.
+            # Snapshot it at mission start; publish the delta since.
+            bbrun_sqft = (reported.get('bbrun', {}) or {}).get('sqft')
+            if cycle_now != 'none' and bbrun_sqft is not None:
+                if self._mission_start_sqft is None:
+                    self._mission_start_sqft = bbrun_sqft
+                mission_sqft = max(0, bbrun_sqft - self._mission_start_sqft)
+            else:
+                # Mission over — reset snapshot so next mission starts fresh
+                self._mission_start_sqft = None
+                mission_sqft = sqft or 0  # in case the field is back on some firmware
+            self._set('GV11', round(mission_sqft * 0.0929, 1))
 
             # --- Clean Base bag full: multiple fields vary by firmware.
             #     Report if ANY of the candidates indicates full. Log the raw
