@@ -659,9 +659,7 @@ class Controller(udi_interface.Node):
             node.query()
 
     def poll(self, flag):
-        if flag == 'shortPoll':
-            for node in self._robots.values():
-                node.query()
+        pass  # MQTT callbacks keep state current; no polling needed
 
     commands = {
         'DISCOVER':    cmd_discover,
