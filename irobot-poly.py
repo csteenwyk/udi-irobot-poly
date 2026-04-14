@@ -26,6 +26,10 @@ except ImportError as _e:
 
 LOGGER = udi_interface.LOGGER
 
+# Suppress roombapy's internal retry logging — we log connect failures ourselves
+import logging as _logging
+_logging.getLogger('roombapy').setLevel(_logging.CRITICAL)
+
 _ROBOT_KEY = re.compile(r'^robot(\d+)_(ip|blid|password|name)$')
 
 # Roomba "phase" strings → compact ISY index
