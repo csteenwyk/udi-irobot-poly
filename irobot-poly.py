@@ -386,7 +386,6 @@ class RobotNode(udi_interface.Node):
                 notReady in (43, 216)
             )
             self._set('GV13', 1 if bag_full else 0)
-            LOGGER.debug(f'{self.name} bag signals: {bag_candidates}')
 
             # --- mission state (derived from cycle + phase) ---
             self._set('GV14', _mission_state(mission))
