@@ -201,7 +201,6 @@ class RobotNode(udi_interface.Node):
         self._cache = {}
         self._dumped = False
         self._mission_start_sqft = None  # bbrun.sqft at start of current mission
-        self._last_msg_time = 0
         self._connect()
 
     def _connect(self):
