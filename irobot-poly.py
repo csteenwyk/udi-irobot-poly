@@ -201,6 +201,7 @@ class RobotNode(udi_interface.Node):
         self._cache = {}
         self._dumped = False
         self._mission_start_sqft = None  # bbrun.sqft at start of current mission
+        self._last_msg_time = 0
         self._connect()
 
     def _connect(self):
@@ -240,7 +241,17 @@ class RobotNode(udi_interface.Node):
                 time.sleep(min(60, 5 * attempt))
 
     def _on_message(self, json_data):
+        self._last_msg_time = time.time()
         self._apply_state()
+
+    def check_alive(self, timeout=120):
+        """If no MQTT message received within timeout, force reconnect."""
+        if not self._roomba or not self._last_msg_time:
+            return
+        if time.time() - self._last_msg_time > timeout:
+            LOGGER.warning(f'{self.name}: no MQTT data for {timeout}s — reconnecting')
+            self.disconnect()
+            self._connect()
 
     def _on_disconnect(self, error=None):
         """Re-launch the connect loop after an unexpected disconnect so we
@@ -662,7 +673,10 @@ class Controller(udi_interface.Node):
             node.query()
 
     def poll(self, flag):
-        pass  # MQTT callbacks keep state current; no polling needed
+        if flag == 'longPoll':
+            for node in self._robots.values():
+                if node:
+                    node.check_alive()
 
     commands = {
         'DISCOVER':    cmd_discover,
