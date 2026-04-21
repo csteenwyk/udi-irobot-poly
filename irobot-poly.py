@@ -219,6 +219,10 @@ class RobotNode(udi_interface.Node):
                 address=self._ip, blid=self._blid, password=self._password,
                 continuous=True, delay=30)
             self._roomba.register_on_disconnect_callback(self._on_disconnect)
+            # Apply state reactively on any incoming MQTT update so the UI
+            # reflects command results within a second instead of waiting
+            # for the next shortPoll.
+            self._roomba.register_on_message_callback(self._on_message)
         except Exception as e:
             LOGGER.error(f'{self.name}: create_roomba failed: {e}')
             return
@@ -245,6 +249,12 @@ class RobotNode(udi_interface.Node):
     def _on_disconnect(self, error):
         LOGGER.warning(f'{self.name}: MQTT disconnected ({error})')
         self._set('GV15', 0)
+
+    def _on_message(self, json_data):
+        # Fires on every incoming shadow update from the robot. _set's cache
+        # check dedupes unchanged drivers so this doesn't flood ISY.
+        self._set('GV15', 1)
+        self._apply_state()
 
     def poll_state(self):
         """Called from controller shortPoll — just read the in-memory shadow
