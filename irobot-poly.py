@@ -189,6 +189,7 @@ class RobotNode(udi_interface.Node):
         {'driver': 'GV12',  'value': 0, 'uom': 56},  # Runtime this run (min)
         {'driver': 'GV13',  'value': 0, 'uom': 2},   # Clean Base bag full
         {'driver': 'GV14',  'value': 0, 'uom': 25},  # Mission state
+        {'driver': 'GV15',  'value': 0, 'uom': 2},   # Connected (last poll ok)
     ]
 
     def __init__(self, polyglot, primary, address, name, ip, blid, password, ctrl):
@@ -240,11 +241,11 @@ class RobotNode(udi_interface.Node):
                 self._apply_state()
                 roomba.disconnect()
                 self._roomba = None
-                self._last_poll_ok = True
+                self._set('GV15', 1)
                 return True
             except Exception as e:
                 LOGGER.debug(f'{self.name}: poll failed: {e}')
-                self._last_poll_ok = False
+                self._set('GV15', 0)
                 return False
 
     def poll_state(self):
@@ -420,8 +421,10 @@ class RobotNode(udi_interface.Node):
                 self._apply_state()
                 roomba.disconnect()
                 self._roomba = None
+                self._set('GV15', 1)
             except Exception as e:
                 LOGGER.error(f'{self.name}: {label} failed: {e}')
+                self._set('GV15', 0)
 
     def _send(self, cmd):
         threading.Thread(

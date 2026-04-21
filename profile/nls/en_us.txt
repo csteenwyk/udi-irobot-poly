@@ -27,6 +27,7 @@ ST-irobot_robot-GV11-NAME = Area Cleaned (m\u00b2)
 ST-irobot_robot-GV12-NAME = Runtime (min)
 ST-irobot_robot-GV13-NAME = Clean Base Bag Full
 ST-irobot_robot-GV14-NAME = Mission State
+ST-irobot_robot-GV15-NAME = Connected
 
 # Robot Commands
 CMD-irobot_robot-START-NAME = Start Cleaning
