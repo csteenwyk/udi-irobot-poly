@@ -202,55 +202,59 @@ class RobotNode(udi_interface.Node):
         self._cache = {}
         self._dumped = False
         self._mission_start_sqft = None  # bbrun.sqft at start of current mission
-        # Serialize poll + command connections — Roomba MQTT allows only one
-        # client at a time, so concurrent connects (e.g. a poll firing during a
-        # user-initiated send) fight over the slot.
-        self._conn_lock = threading.Lock()
         self._connect()
 
     def _connect(self):
+        """Create one persistent continuous-mode MQTT session per robot.
+
+        roombapy keeps the session alive and reconnects on drops using the
+        `delay` backoff. In this mode send_command / set_preference land
+        reliably — unlike one-shot connections, which tear down before the
+        robot finishes applying and re-publishing its shadow."""
         if RoombaFactory is None:
             LOGGER.error('roombapy not installed')
             return
-        threading.Thread(target=self._initial_poll, daemon=True,
+        try:
+            self._roomba = RoombaFactory.create_roomba(
+                address=self._ip, blid=self._blid, password=self._password,
+                continuous=True, delay=30)
+            self._roomba.register_on_disconnect_callback(self._on_disconnect)
+        except Exception as e:
+            LOGGER.error(f'{self.name}: create_roomba failed: {e}')
+            return
+        threading.Thread(target=self._connect_loop, daemon=True,
                          name=f'connect-{self.address}').start()
 
-    def _initial_poll(self):
-        """Do an initial poll on startup with retries."""
+    def _connect_loop(self):
+        """Establish the initial MQTT connection with retry. Once connected,
+        roombapy handles reconnects internally."""
         time.sleep(3)
         attempt = 0
         while True:
             attempt += 1
-            if self._poll_once():
-                LOGGER.info(f'{self.name}: initial poll succeeded (attempt {attempt})')
-                return
-            LOGGER.warning(f'{self.name}: initial poll attempt {attempt} failed')
-            time.sleep(min(60, 5 * attempt))
-
-    def _poll_once(self) -> bool:
-        """Connect, grab state, disconnect. Returns True on success."""
-        with self._conn_lock:
             try:
-                roomba = RoombaFactory.create_roomba(
-                    address=self._ip, blid=self._blid, password=self._password,
-                    continuous=False, delay=1)
-                roomba.connect()
-                # Give it a moment to receive state
-                time.sleep(5)
-                self._roomba = roomba
-                self._apply_state()
-                roomba.disconnect()
-                self._roomba = None
+                self._roomba.connect()
                 self._set('GV15', 1)
-                return True
+                LOGGER.info(f'{self.name}: connected (attempt {attempt})')
+                return
             except Exception as e:
-                LOGGER.debug(f'{self.name}: poll failed: {e}')
                 self._set('GV15', 0)
-                return False
+                LOGGER.warning(f'{self.name}: connect attempt {attempt} failed: {e}')
+                time.sleep(min(60, 5 * attempt))
+
+    def _on_disconnect(self, error):
+        LOGGER.warning(f'{self.name}: MQTT disconnected ({error})')
+        self._set('GV15', 0)
 
     def poll_state(self):
-        """Called from controller shortPoll to refresh state."""
-        self._poll_once()
+        """Called from controller shortPoll — just read the in-memory shadow
+        and publish any changed drivers. No connection I/O."""
+        if self._roomba is None:
+            return
+        reported = (self._roomba.master_state or {}).get('state', {}).get('reported', {})
+        if reported:
+            self._set('GV15', 1)
+        self._apply_state()
 
     def _set(self, driver, value):
         if self._cache.get(driver) != value:
@@ -401,46 +405,27 @@ class RobotNode(udi_interface.Node):
                 pass
             self._roomba = None
 
-    def _with_connection(self, work, label):
-        """Connect, run work(roomba), wait for robot to apply, read state back,
-        disconnect. Serialized against poll via _conn_lock so we don't trip the
-        robot's single-MQTT-client limit."""
-        with self._conn_lock:
-            try:
-                roomba = RoombaFactory.create_roomba(
-                    address=self._ip, blid=self._blid, password=self._password,
-                    continuous=False, delay=1)
-                roomba.connect()
-                # Let the MQTT session settle before sending
-                time.sleep(2)
-                work(roomba)
-                LOGGER.info(f'{self.name}: {label}')
-                # Give the robot time to apply and republish reported state
-                time.sleep(8)
-                self._roomba = roomba
-                self._apply_state()
-                roomba.disconnect()
-                self._roomba = None
-                self._set('GV15', 1)
-            except Exception as e:
-                LOGGER.error(f'{self.name}: {label} failed: {e}')
-                self._set('GV15', 0)
-
     def _send(self, cmd):
-        threading.Thread(
-            target=self._with_connection,
-            args=(lambda r: r.send_command(cmd), f'sent {cmd}'),
-            daemon=True).start()
+        if not self._roomba:
+            LOGGER.warning(f'{self.name}: not connected, dropping {cmd!r}')
+            return
+        try:
+            self._roomba.send_command(cmd)
+            LOGGER.info(f'{self.name}: sent {cmd}')
+        except Exception as e:
+            LOGGER.error(f'{self.name}: send {cmd!r} failed: {e}')
 
     def _set_prefs(self, prefs):
         """Apply a dict of preferences to the robot via set_preference."""
-        def _do(r):
+        if not self._roomba:
+            LOGGER.warning(f'{self.name}: not connected, dropping prefs {prefs}')
+            return
+        try:
             for k, v in prefs.items():
-                r.set_preference(k, v)
-        threading.Thread(
-            target=self._with_connection,
-            args=(_do, f'set_preference {prefs}'),
-            daemon=True).start()
+                self._roomba.set_preference(k, v)
+            LOGGER.info(f'{self.name}: set_preference {prefs}')
+        except Exception as e:
+            LOGGER.error(f'{self.name}: set_preference failed: {e}')
 
     def cmd_start(self, command):  self._send('start')
     def cmd_stop(self, command):   self._send('stop')
