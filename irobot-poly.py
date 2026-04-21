@@ -309,38 +309,45 @@ class RobotNode(udi_interface.Node):
             if 'present' in bin_:
                 self._set('GV2', 1 if bin_.get('present') else 0)
 
-            # --- docked: prefer authoritative dock.known, fall back to phase ---
+            # --- docked: prefer authoritative dock.known, fall back to phase.
+            # Guard against empty poll — if neither signal is present, skip so
+            # we don't overwrite a good value with 0. ---
             if 'known' in dock:
                 self._set('GV3', 1 if dock.get('known') else 0)
-            else:
+            elif phase is not None:
                 self._set('GV3', 1 if phase in ('charge', 'dockend', 'dock') else 0)
 
             # --- charging state (multi-enum). Prefer explicit chargingState
-            #     string; else derive from phase. ---
+            #     string; else derive from phase. Same guard as GV3. ---
             if isinstance(chargingState, str):
                 self._set('GV4', _CHARGE_MAP.get(chargingState.lower(), 0))
             elif phase == 'charge':
                 self._set('GV4', 1)
             elif batt is not None and batt >= 100 and phase in ('stop', 'dockend', 'charge'):
                 self._set('GV4', 2)  # Full
-            else:
+            elif phase is not None:
                 self._set('GV4', 0)
 
             # --- error (numeric + readable notice) ---
-            self._set('GV5', int(err))
-            notice_key = f'err_{self.address}'
-            if err:
-                text = _ERROR_TEXT.get(err, f'Error {err}')
-                self._ctrl.poly.Notices[notice_key] = f'{self.name}: {text} (code {err})'
-            else:
-                try:
-                    del self._ctrl.poly.Notices[notice_key]
-                except Exception:
-                    pass
+            if 'error' in mission:
+                self._set('GV5', int(err))
+                notice_key = f'err_{self.address}'
+                if err:
+                    text = _ERROR_TEXT.get(err, f'Error {err}')
+                    self._ctrl.poly.Notices[notice_key] = f'{self.name}: {text} (code {err})'
+                else:
+                    try:
+                        del self._ctrl.poly.Notices[notice_key]
+                    except Exception:
+                        pass
 
-            # --- suction / passes ---
-            self._set('GV7', _suction_index(reported))
-            self._set('GV8', _passes_index(reported))
+            # --- suction / passes: only publish when the source keys are in
+            # this poll's state, otherwise a partial poll flips us back to
+            # defaults and it looks like the setting reverted. ---
+            if 'carpetBoost' in reported or 'vacHigh' in reported:
+                self._set('GV7', _suction_index(reported))
+            if 'noAutoPasses' in reported or 'twoPass' in reported:
+                self._set('GV8', _passes_index(reported))
 
             # --- child lock / bin pause ---
             if 'childLock' in reported:
@@ -348,50 +355,40 @@ class RobotNode(udi_interface.Node):
             if 'binPause' in reported:
                 self._set('GV10', 1 if reported.get('binPause') else 0)
 
-            # --- runtime this mission (wall-clock; mssnM updates intermittently) ---
-            strt_tm = mission.get('mssnStrtTm') or 0
-            cycle_now = (mission.get('cycle') or 'none').lower()
-            if cycle_now != 'none' and strt_tm:
-                runtime_min = max(0, int((time.time() - strt_tm) / 60))
-            else:
-                runtime_min = int(mssnM)
-            self._set('GV12', runtime_min)
+            # --- runtime + area + mission state + bag-full all depend on
+            # cleanMissionStatus; skip the whole block if it's missing from
+            # this poll. ---
+            if mission:
+                strt_tm = mission.get('mssnStrtTm') or 0
+                cycle_now = (mission.get('cycle') or 'none').lower()
+                if cycle_now != 'none' and strt_tm:
+                    runtime_min = max(0, int((time.time() - strt_tm) / 60))
+                else:
+                    runtime_min = int(mssnM)
+                self._set('GV12', runtime_min)
 
-            # --- area this mission (delta against bbrun.sqft lifetime counter) ---
-            # cleanMissionStatus.sqft is absent on current S9+/j9+ firmware,
-            # but bbrun.sqft (lifetime ft² cleaned) still ticks up during a run.
-            # Snapshot it at mission start; publish the delta since.
-            bbrun_sqft = (reported.get('bbrun', {}) or {}).get('sqft')
-            if cycle_now != 'none' and bbrun_sqft is not None:
-                if self._mission_start_sqft is None:
-                    self._mission_start_sqft = bbrun_sqft
-                mission_sqft = max(0, bbrun_sqft - self._mission_start_sqft)
-            else:
-                # Mission over — reset snapshot so next mission starts fresh
-                self._mission_start_sqft = None
-                mission_sqft = sqft or 0  # in case the field is back on some firmware
-            self._set('GV11', round(mission_sqft * 0.0929, 1))
+                # cleanMissionStatus.sqft is absent on current S9+/j9+ firmware,
+                # but bbrun.sqft (lifetime ft² cleaned) still ticks up during a
+                # run. Snapshot it at mission start; publish the delta since.
+                bbrun_sqft = (reported.get('bbrun', {}) or {}).get('sqft')
+                if cycle_now != 'none' and bbrun_sqft is not None:
+                    if self._mission_start_sqft is None:
+                        self._mission_start_sqft = bbrun_sqft
+                    mission_sqft = max(0, bbrun_sqft - self._mission_start_sqft)
+                else:
+                    self._mission_start_sqft = None
+                    mission_sqft = sqft or 0
+                self._set('GV11', round(mission_sqft * 0.0929, 1))
 
-            # --- Clean Base bag full: multiple fields vary by firmware.
-            #     Report if ANY of the candidates indicates full. Log the raw
-            #     candidates at DEBUG so we can tighten this later. ---
-            bag_candidates = {
-                'dock.bagFull': dock.get('bagFull'),
-                'dock.state': dock.get('state'),
-                'bin.bagFull': bin_.get('bagFull'),
-                'notReady': notReady,
-                'error43': err == 43,
-            }
-            bag_full = (
-                bool(dock.get('bagFull')) or
-                bool(bin_.get('bagFull')) or
-                err in (43, 216) or            # 216 = S9+/i/j bag full
-                notReady in (43, 216)
-            )
-            self._set('GV13', 1 if bag_full else 0)
+                bag_full = (
+                    bool(dock.get('bagFull')) or
+                    bool(bin_.get('bagFull')) or
+                    err in (43, 216) or            # 216 = S9+/i/j bag full
+                    notReady in (43, 216)
+                )
+                self._set('GV13', 1 if bag_full else 0)
 
-            # --- mission state (derived from cycle + phase) ---
-            self._set('GV14', _mission_state(mission))
+                self._set('GV14', _mission_state(mission))
         except Exception as e:
             LOGGER.debug(f'{self.name}: state parse error: {e}')
 
