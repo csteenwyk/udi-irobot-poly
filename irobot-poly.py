@@ -201,6 +201,10 @@ class RobotNode(udi_interface.Node):
         self._cache = {}
         self._dumped = False
         self._mission_start_sqft = None  # bbrun.sqft at start of current mission
+        # Serialize poll + command connections — Roomba MQTT allows only one
+        # client at a time, so concurrent connects (e.g. a poll firing during a
+        # user-initiated send) fight over the slot.
+        self._conn_lock = threading.Lock()
         self._connect()
 
     def _connect(self):
@@ -224,23 +228,24 @@ class RobotNode(udi_interface.Node):
 
     def _poll_once(self) -> bool:
         """Connect, grab state, disconnect. Returns True on success."""
-        try:
-            roomba = RoombaFactory.create_roomba(
-                address=self._ip, blid=self._blid, password=self._password,
-                continuous=False, delay=1)
-            roomba.connect()
-            # Give it a moment to receive state
-            time.sleep(5)
-            self._roomba = roomba
-            self._apply_state()
-            roomba.disconnect()
-            self._roomba = None
-            self._last_poll_ok = True
-            return True
-        except Exception as e:
-            LOGGER.debug(f'{self.name}: poll failed: {e}')
-            self._last_poll_ok = False
-            return False
+        with self._conn_lock:
+            try:
+                roomba = RoombaFactory.create_roomba(
+                    address=self._ip, blid=self._blid, password=self._password,
+                    continuous=False, delay=1)
+                roomba.connect()
+                # Give it a moment to receive state
+                time.sleep(5)
+                self._roomba = roomba
+                self._apply_state()
+                roomba.disconnect()
+                self._roomba = None
+                self._last_poll_ok = True
+                return True
+            except Exception as e:
+                LOGGER.debug(f'{self.name}: poll failed: {e}')
+                self._last_poll_ok = False
+                return False
 
     def poll_state(self):
         """Called from controller shortPoll to refresh state."""
@@ -398,48 +403,44 @@ class RobotNode(udi_interface.Node):
                 pass
             self._roomba = None
 
-    def _get_connection(self):
-        """Get a temporary MQTT connection for sending commands."""
-        try:
-            roomba = RoombaFactory.create_roomba(
-                address=self._ip, blid=self._blid, password=self._password,
-                continuous=False, delay=1)
-            roomba.connect()
-            return roomba
-        except Exception as e:
-            LOGGER.error(f'{self.name}: command connect failed: {e}')
-            return None
+    def _with_connection(self, work, label):
+        """Connect, run work(roomba), wait for robot to apply, read state back,
+        disconnect. Serialized against poll via _conn_lock so we don't trip the
+        robot's single-MQTT-client limit."""
+        with self._conn_lock:
+            try:
+                roomba = RoombaFactory.create_roomba(
+                    address=self._ip, blid=self._blid, password=self._password,
+                    continuous=False, delay=1)
+                roomba.connect()
+                # Let the MQTT session settle before sending
+                time.sleep(2)
+                work(roomba)
+                LOGGER.info(f'{self.name}: {label}')
+                # Give the robot time to apply and republish reported state
+                time.sleep(8)
+                self._roomba = roomba
+                self._apply_state()
+                roomba.disconnect()
+                self._roomba = None
+            except Exception as e:
+                LOGGER.error(f'{self.name}: {label} failed: {e}')
 
     def _send(self, cmd):
-        def _do():
-            roomba = self._get_connection()
-            if not roomba:
-                return
-            try:
-                roomba.send_command(cmd)
-                LOGGER.info(f'{self.name}: sent {cmd}')
-                time.sleep(1)
-            except Exception as e:
-                LOGGER.error(f'{self.name}: send {cmd!r} failed: {e}')
-            finally:
-                roomba.disconnect()
-        threading.Thread(target=_do, daemon=True).start()
+        threading.Thread(
+            target=self._with_connection,
+            args=(lambda r: r.send_command(cmd), f'sent {cmd}'),
+            daemon=True).start()
 
     def _set_prefs(self, prefs):
         """Apply a dict of preferences to the robot via set_preference."""
-        def _do():
-            roomba = self._get_connection()
-            if not roomba:
-                return
-            try:
-                for k, v in prefs.items():
-                    roomba.set_preference(k, v)
-                time.sleep(1)
-            except Exception as e:
-                LOGGER.error(f'{self.name}: set_preference failed: {e}')
-            finally:
-                roomba.disconnect()
-        threading.Thread(target=_do, daemon=True).start()
+        def _do(r):
+            for k, v in prefs.items():
+                r.set_preference(k, v)
+        threading.Thread(
+            target=self._with_connection,
+            args=(_do, f'set_preference {prefs}'),
+            daemon=True).start()
 
     def cmd_start(self, command):  self._send('start')
     def cmd_stop(self, command):   self._send('stop')
